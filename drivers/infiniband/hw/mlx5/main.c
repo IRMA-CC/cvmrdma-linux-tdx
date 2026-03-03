@@ -4638,3 +4638,4 @@ static void __exit mlx5_ib_cleanup(void)
 
 module_init(mlx5_ib_init);
 module_exit(mlx5_ib_cleanup);
+MODULE_IMPORT_NS(DMA_BUF);

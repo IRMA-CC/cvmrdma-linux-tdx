@@ -724,6 +724,7 @@ static int create_cq_user(struct mlx5_ib_dev *dev, struct ib_udata *udata,
 	int ncont;
 	void *cqc;
 	int err;
+	struct ib_umem_dmabuf * umem_dmabuf;
 	struct mlx5_ib_ucontext *context = rdma_udata_to_drv_context(
 		udata, struct mlx5_ib_ucontext, ibucontext);
 
@@ -745,13 +746,15 @@ static int create_cq_user(struct mlx5_ib_dev *dev, struct ib_udata *udata,
 
 	*cqe_size = ucmd.cqe_size;
 
-	cq->buf.umem =
-		ib_umem_get(&dev->ib_dev, ucmd.buf_addr,
-			    entries * ucmd.cqe_size, IB_ACCESS_LOCAL_WRITE);
-	if (IS_ERR(cq->buf.umem)) {
-		err = PTR_ERR(cq->buf.umem);
+	umem_dmabuf = ib_umem_dmabuf_get_pinned(
+		&dev->ib_dev, 0, entries * ucmd.cqe_size, ucmd.buf_fd, IB_ACCESS_LOCAL_WRITE
+	);
+	if (IS_ERR(umem_dmabuf)) {
+		err = PTR_ERR(umem_dmabuf);
 		return err;
 	}
+	cq->buf.umem = &umem_dmabuf->umem;
+
 
 	page_size = mlx5_umem_find_best_cq_quantized_pgoff(
 		cq->buf.umem, cqc, log_page_size, MLX5_ADAPTER_PAGE_SHIFT,
@@ -761,15 +764,15 @@ static int create_cq_user(struct mlx5_ib_dev *dev, struct ib_udata *udata,
 		goto err_umem;
 	}
 
-	err = mlx5_ib_db_map_user(context, ucmd.db_addr, &cq->db);
+	err = mlx5_ib_db_map_user(context, ucmd.db_addr, &cq->db, ucmd.db_page_fd);
 	if (err)
 		goto err_umem;
 
 	ncont = ib_umem_num_dma_blocks(cq->buf.umem, page_size);
 	mlx5_ib_dbg(
 		dev,
-		"addr 0x%llx, size %u, npages %zu, page_size %lu, ncont %d\n",
-		ucmd.buf_addr, entries * ucmd.cqe_size,
+		"addr 0x%llx, fd %d size %u, npages %zu, page_size %lu, ncont %d\n",
+		ucmd.buf_addr, ucmd.buf_fd, entries * ucmd.cqe_size,
 		ib_umem_num_pages(cq->buf.umem), page_size, ncont);
 
 	*inlen = MLX5_ST_SZ_BYTES(create_cq_in) +

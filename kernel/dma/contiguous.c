@@ -360,8 +360,11 @@ struct page *dma_alloc_contiguous(struct device *dev, size_t size, gfp_t gfp)
 #endif
 
 	/* CMA can be used only in the context which permits sleeping */
-	if (!gfpflags_allow_blocking(gfp))
+	if (!gfpflags_allow_blocking(gfp)) {
+		printk(KERN_ERR "[KERNEL CONTIGUOUS]dma_alloc_contiguous: !gfpflags_allow_blocking(gfp): can't allocate %zu bytes\n",
+		       size);
 		return NULL;
+	}
 	if (dev->cma_area)
 		return cma_alloc_aligned(dev->cma_area, size, gfp);
 	if (size <= PAGE_SIZE)

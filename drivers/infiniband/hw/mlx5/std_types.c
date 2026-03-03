@@ -10,6 +10,7 @@
 #include <linux/mlx5/eswitch.h>
 #include <linux/mlx5/vport.h>
 #include "mlx5_ib.h"
+#include "public_alloc.h"
 
 #define UVERBS_MODULE_NAME mlx5_ib
 #include <rdma/uverbs_named_ioctl.h>
@@ -183,6 +184,62 @@ static int UVERBS_HANDLER(MLX5_IB_METHOD_QUERY_PORT)(
 					     sizeof(info));
 }
 
+static int UVERBS_HANDLER(MLX5_IB_METHOD_ALLOC_PUBLIC_MEM)(struct uverbs_attr_bundle *attrs)
+{
+	int ret = 0;
+	int pm_fd = -1;
+
+	u32 flags = 0;
+	u64 size = 0;
+
+	struct ib_ucontext * ctxt = NULL;
+	struct device * dma_dev = NULL;
+
+	/* Global method: attrs->context is NOT defined properly!*/
+	ctxt = ib_uverbs_get_ucontext(attrs);
+	dma_dev = ctxt->device->dma_device;
+
+	ret = uverbs_get_const(&flags, attrs, MLX5_IB_ATTR_ALLOC_PUBLIC_MEM_FLAGS);
+	if(ret)
+	{
+		dev_err(dma_dev, "failed to get MLX5_IB_ATTR_ALLOC_PUBLIC_MEM_FLAGS\n");
+		goto ret;
+	}
+
+	ret = uverbs_get_const(&size, attrs, MLX5_IB_ATTR_ALLOC_PUBLIC_MEM_SIZE);
+	if(ret)
+	{
+		dev_err(dma_dev, "failed to get MLX5_IB_ATTR_ALLOC_PUBLIC_MEM_SIZE\n");
+		goto ret;
+	}
+
+	pm_fd  = pubmem_dmabuf_alloc(dma_dev, size, (int)flags);
+	if(pm_fd < 0)
+	{
+		ret = pm_fd;
+		dev_err(dma_dev, "public_mem_create failed with %d\n", ret);
+		goto ret;
+	}
+
+	dev_dbg(dma_dev, "returning public dmabuf fd %d\n", pm_fd);
+
+	ret = uverbs_copy_to(attrs, MLX5_IB_ATTR_ALLOC_PUBLIC_MEM_FD,
+		&pm_fd,
+		sizeof(int)
+	);
+	if(ret)
+	{
+		dev_err(dma_dev, "failed to uverbs_copy_to %d\n", ret);
+		goto ret;
+	}
+
+	return 0;
+
+ret:
+	return ret;
+}
+
+
 DECLARE_UVERBS_NAMED_METHOD(
 	MLX5_IB_METHOD_QUERY_PORT,
 	UVERBS_ATTR_PTR_IN(MLX5_IB_ATTR_QUERY_PORT_PORT_NUM,
@@ -193,9 +250,31 @@ DECLARE_UVERBS_NAMED_METHOD(
 				   reg_c0),
 		UA_MANDATORY));
 
+DECLARE_UVERBS_NAMED_METHOD(
+	MLX5_IB_METHOD_ALLOC_PUBLIC_MEM,
+	/* A method MUST have the receiver as one of its arguments! */
+	UVERBS_ATTR_PTR_IN(
+		MLX5_IB_ATTR_ALLOC_PUBLIC_MEM_SIZE,
+		UVERBS_ATTR_TYPE(u64),
+		UA_MANDATORY
+	),
+	UVERBS_ATTR_PTR_IN(
+		MLX5_IB_ATTR_ALLOC_PUBLIC_MEM_FLAGS,
+		UVERBS_ATTR_TYPE(u32),
+		UA_MANDATORY
+	),
+	UVERBS_ATTR_PTR_OUT(
+		MLX5_IB_ATTR_ALLOC_PUBLIC_MEM_FD,
+		UVERBS_ATTR_TYPE(int),
+		UA_MANDATORY
+	)
+);
+
+
 ADD_UVERBS_METHODS(mlx5_ib_device,
 		   UVERBS_OBJECT_DEVICE,
-		   &UVERBS_METHOD(MLX5_IB_METHOD_QUERY_PORT));
+		   &UVERBS_METHOD(MLX5_IB_METHOD_QUERY_PORT),
+		   &UVERBS_METHOD(MLX5_IB_METHOD_ALLOC_PUBLIC_MEM));
 
 DECLARE_UVERBS_NAMED_METHOD(
 	MLX5_IB_METHOD_PD_QUERY,

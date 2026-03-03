@@ -322,6 +322,10 @@ static void __init *swiotlb_memblock_alloc(unsigned long nslabs,
 	size_t bytes = PAGE_ALIGN(nslabs << IO_TLB_SHIFT);
 	void *tlb;
 
+	flags |= SWIOTLB_ANY;
+	flags |= SWIOTLB_VERBOSE;
+
+
 	/*
 	 * By default allocate the bounce buffer memory from low memory, but
 	 * allow to pick a location everywhere for hypervisors with guest
@@ -1321,6 +1325,47 @@ static unsigned long mem_used(struct io_tlb_mem *mem)
 
 #endif /* CONFIG_DEBUG_FS */
 
+static unsigned long last_logged_mb_used = 0;
+
+/**
+ * log_swiotlb_usage() - Log SWIOTLB usage when MB thresholds are reached
+ * @mem:	Software IO TLB allocator
+ * @dev:	Device making the allocation request
+ * @requested_size: Size of the current allocation request
+ */
+static void log_swiotlb_usage(struct io_tlb_mem *mem, struct device *dev, size_t requested_size, bool unmapped)
+{
+    unsigned long total_slots = mem->nslabs;
+    unsigned long used_slots = mem_used(mem);
+    unsigned long free_slots = total_slots - used_slots;
+    unsigned long total_mb = (total_slots << IO_TLB_SHIFT) >> 20;  /* Total MB */
+    unsigned long used_mb = (used_slots << IO_TLB_SHIFT) >> 20;    /* Used MB */
+    unsigned long free_mb = (free_slots << IO_TLB_SHIFT) >> 20;    /* Free MB */
+    unsigned long freed_mb = (requested_size >> 20);              /* Freed MB */
+    
+	if (used_mb > last_logged_mb_used) {
+		const char *device_name = dev ? dev_name(dev) : "unknown";
+		
+		pr_info("SWIOTLB: %s requesting %zu bytes - Used: %lu/%lu MB (%lu%%), Free: %lu MB, Slots used: %lu/%lu\n",
+			device_name,
+			requested_size,
+			used_mb, 
+			total_mb,
+			total_mb > 0 ? (used_mb * 100) / total_mb : 0,
+			free_mb,
+			used_slots,
+			total_slots);
+		
+		last_logged_mb_used = used_mb;
+		
+		/* Warn when getting close to full */
+		if (used_mb > (total_mb * 90) / 100) {
+			pr_warn("SWIOTLB: %s - WARNING: Over 90%% full! (%lu/%lu MB used)\n",
+				device_name, used_mb, total_mb);
+		}
+	}
+}
+
 phys_addr_t swiotlb_tbl_map_single(struct device *dev, phys_addr_t orig_addr,
 		size_t mapping_size, size_t alloc_size,
 		unsigned int alloc_align_mask, enum dma_data_direction dir,
@@ -1352,11 +1397,20 @@ phys_addr_t swiotlb_tbl_map_single(struct device *dev, phys_addr_t orig_addr,
 	offset = swiotlb_align_offset(dev, alloc_align_mask, orig_addr);
 	index = swiotlb_find_slots(dev, orig_addr,
 				   alloc_size + offset, alloc_align_mask, &pool);
+
+	log_swiotlb_usage(mem, dev, mapping_size, false);
+	index = swiotlb_find_slots(dev, orig_addr, size, alloc_align_mask,
+					&pool);
+
+	
 	if (index == -1) {
-		if (!(attrs & DMA_ATTR_NO_WARN))
-			dev_warn_ratelimited(dev,
-	"swiotlb buffer is full (sz: %zd bytes), total %lu (slots), used %lu (slots)\n",
-				 alloc_size, mem->nslabs, mem_used(mem));
+		if (!(attrs & DMA_ATTR_NO_WARN)) {
+			dump_stack();
+			dev_warn_ratelimited(
+				dev,
+				"swiotlb buffer is full (sz: %zd bytes, mapping_size: %zd), total %lu (slots), used %lu (slots)\n",
+				size, mapping_size, mem->nslabs, mem_used(mem));
+		}
 		return (phys_addr_t)DMA_MAPPING_ERROR;
 	}
 
@@ -1384,6 +1438,9 @@ phys_addr_t swiotlb_tbl_map_single(struct device *dev, phys_addr_t orig_addr,
 	swiotlb_bounce(dev, tlb_addr, mapping_size, DMA_TO_DEVICE);
 	return tlb_addr;
 }
+
+
+
 
 static void swiotlb_release_slots(struct device *dev, phys_addr_t tlb_addr)
 {

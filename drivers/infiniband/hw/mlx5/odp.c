@@ -735,10 +735,11 @@ static int pagefault_dmabuf_mr(struct mlx5_ib_mr *mr, size_t bcnt,
 	if (err)
 		return err;
 
+	int num_pages = ib_umem_num_pages(mr->umem);
 	if (bytes_mapped)
 		*bytes_mapped += bcnt;
 
-	return ib_umem_num_pages(mr->umem);
+	return num_pages;
 }
 
 /*

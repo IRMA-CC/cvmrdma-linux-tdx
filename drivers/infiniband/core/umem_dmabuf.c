@@ -120,9 +120,12 @@ struct ib_umem_dmabuf *ib_umem_dmabuf_get(struct ib_device *device,
 	struct ib_umem *umem;
 	unsigned long end;
 	struct ib_umem_dmabuf *ret = ERR_PTR(-EINVAL);
-
-	if (check_add_overflow(offset, (unsigned long)size, &end))
+	
+	if (check_add_overflow(offset, (unsigned long)size, &end)) {
+		printk(KERN_ERR "ib_umem_dmabuf_get: overflow\n");
 		return ret;
+	}
+
 
 	if (unlikely(!ops || !ops->move_notify))
 		return ret;

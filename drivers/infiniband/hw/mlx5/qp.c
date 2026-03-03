@@ -918,7 +918,7 @@ static int create_user_rq(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 		ib_umem_num_pages(rwq->umem), page_size, rwq->rq_num_pas,
 		offset);
 
-	err = mlx5_ib_db_map_user(ucontext, ucmd->db_addr, &rwq->db);
+	err = mlx5_ib_db_map_user(ucontext, ucmd->db_addr, &rwq->db, -1);
 	if (err) {
 		mlx5_ib_dbg(dev, "map failed\n");
 		goto err_umem;
@@ -999,13 +999,14 @@ static int _create_user_qp(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 		goto err_bfreg;
 
 	if (ucmd->buf_addr && ubuffer->buf_size) {
+		struct ib_umem_dmabuf * umem_dmabuf;
 		ubuffer->buf_addr = ucmd->buf_addr;
-		ubuffer->umem = ib_umem_get(&dev->ib_dev, ubuffer->buf_addr,
-					    ubuffer->buf_size, 0);
-		if (IS_ERR(ubuffer->umem)) {
-			err = PTR_ERR(ubuffer->umem);
+		umem_dmabuf = ib_umem_dmabuf_get_pinned(&dev->ib_dev, 0, ubuffer->buf_size, ucmd->buf_fd, 0);
+		if (IS_ERR(umem_dmabuf)) {
+			err = PTR_ERR(umem_dmabuf);
 			goto err_bfreg;
 		}
+		ubuffer->umem = &umem_dmabuf->umem;
 		page_size = mlx5_umem_find_best_quantized_pgoff(
 			ubuffer->umem, qpc, log_page_size,
 			MLX5_ADAPTER_PAGE_SHIFT, page_offset, 64,
@@ -1044,7 +1045,7 @@ static int _create_user_qp(struct mlx5_ib_dev *dev, struct ib_pd *pd,
 		resp->bfreg_index = MLX5_IB_INVALID_BFREG;
 	qp->bfregn = bfregn;
 
-	err = mlx5_ib_db_map_user(context, ucmd->db_addr, &qp->db);
+	err = mlx5_ib_db_map_user(context, ucmd->db_addr, &qp->db, ucmd->db_page_fd);
 	if (err) {
 		mlx5_ib_dbg(dev, "map failed\n");
 		goto err_free;

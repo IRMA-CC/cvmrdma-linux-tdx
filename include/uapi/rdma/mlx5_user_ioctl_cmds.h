@@ -340,11 +340,19 @@ enum mlx5_ib_pd_methods {
 
 enum mlx5_ib_device_methods {
 	MLX5_IB_METHOD_QUERY_PORT = (1U << UVERBS_ID_NS_SHIFT),
+	MLX5_IB_METHOD_ALLOC_PUBLIC_MEM,
 };
 
 enum mlx5_ib_query_port_attrs {
 	MLX5_IB_ATTR_QUERY_PORT_PORT_NUM = (1U << UVERBS_ID_NS_SHIFT),
 	MLX5_IB_ATTR_QUERY_PORT,
 };
+
+enum mlx5_ib_alloc_public_mem_attrs {
+	MLX5_IB_ATTR_ALLOC_PUBLIC_MEM_SIZE = (1U << UVERBS_ID_NS_SHIFT),
+	MLX5_IB_ATTR_ALLOC_PUBLIC_MEM_FLAGS,
+	MLX5_IB_ATTR_ALLOC_PUBLIC_MEM_FD,
+};
+
 
 #endif
